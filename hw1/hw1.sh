@@ -2,6 +2,10 @@
 
 FIRST_PLAYER=/tmp/pipe1
 SECOND_PLAYER=/tmp/pipe2
+OTHER_PLAYERS=/tmp/pipe3
+
+# флаг для третьего и более игроков
+NOT_ONLY_SHOW=true
 
 term_rows=$(tput lines)
 term_cols=$(tput cols)
@@ -31,20 +35,22 @@ swipe_pipes() {
 
 init_game() {
     # При выходе удаляем все pipe
-    trap "rm -f $FIRST_PLAYER && rm -f $SECOND_PLAYER" exit
+    trap "rm -f $FIRST_PLAYER && rm -f $SECOND_PLAYER && rm -f $OTHER_PLAYERS" exit
 
     if [[ ! -p $FIRST_PLAYER ]]; then
         waiting_enemy=1
         mkfifo $FIRST_PLAYER
-    else
-        if [[ ! -p $SECOND_PLAYER ]]; then
-            # Как только появляется п=второй игрок - игра начинается
-            waiting_enemy=0
-            mkfifo $SECOND_PLAYER
-        fi
-
+    elif [[ ! -p $SECOND_PLAYER ]]; then
+        # Как только появляется п=второй игрок - игра начинается
+        waiting_enemy=0
+        mkfifo $SECOND_PLAYER
         # Необходимо для второго игрока поменять местами pipe, чтобы код ниже работал корректно
         swipe_pipes
+    elif [[ -p $FIRST_PLAYER ]] && [[ -p $SECOND_PLAYER ]]; then
+        if [[ ! -p $OTHER_PLAYERS ]]; then
+            mkfifo $OTHER_PLAYERS
+        fi
+        NOT_ONLY_SHOW=false
     fi
 }
 
@@ -120,7 +126,6 @@ draw_player_step() {
     set_cursor $cur_line 0
 }
 
-
 game_cycle() {
     draw_player_step $a $b $1
     
@@ -160,26 +165,38 @@ set_cursor 0 0
 
 while true
     do
-        if [[ $waiting_enemy -eq 1 ]]; then
-            echo "Wait enemy step"
-            ((cur_line++))
-            stty -echo
-            if read a b < $FIRST_PLAYER; then
-                game_cycle $((1 - waiting_enemy))
-            fi
-        elif [[ $waiting_enemy -eq 0 ]]; then
-            echo 'Do your step:'
-            cur_line=$((cur_line + 2))
-            stty echo
-            if read a b; then
-                is_right_step
-                if [[ $? -eq 0 ]]; then
-                    echo 'Wrong step ! Try again'
-                    ((cur_line++))
-                else
-                    echo $a $b > $SECOND_PLAYER
+        if $NOT_ONLY_SHOW; then
+            echo $waiting_enemy
+            if [[ $waiting_enemy -eq 1 ]]; then
+                echo "Wait enemy step"
+                ((cur_line++))
+                stty -echo
+                if read a b < $FIRST_PLAYER; then
                     game_cycle $((1 - waiting_enemy))
                 fi
+            else
+                echo 'Do your step:'
+                cur_line=$((cur_line + 2))
+                stty echo
+                if read a b; then
+                    is_right_step
+                    if [[ $? -eq 0 ]]; then
+                        echo 'Wrong step ! Try again'
+                        ((cur_line++))
+                    else
+                        echo $a $b > $SECOND_PLAYER
+                        game_cycle $((1 - waiting_enemy))
+                    fi
+                fi
+            fi
+        else
+            echo $FIRST_PLAYER $SECOND_PLAYER
+            if read a b < $FIRST_PLAYER; then
+                echo 1
+                game_cycle 0
+            elif read a b < $SECOND_PLAYER; then
+                echo 1
+                # game_cycle 0
             fi
         fi
     done
