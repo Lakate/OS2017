@@ -6,7 +6,7 @@ const int END_BYTE = -1;
 
 const unsigned int BUFFER_SIZE = 0x800;
 
-int unzip_sparse(char * f_name) {
+int unzip_sparse(char *f_name) {
     int file_des = open(f_name,  O_WRONLY | O_TRUNC | O_CREAT , S_IRWXU);
     int n;
     char buffer[BUFFER_SIZE];
@@ -48,6 +48,6 @@ int main(int argc, char * argv[]) {
     if (argc == 1) {
         printf("Error! You have to entered file name!");
     } else {
-        return unzip_sparse(argv[2]);
+        return unzip_sparse(argv[1]);
     }
 }
