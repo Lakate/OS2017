@@ -9,12 +9,12 @@ long ind = 0;
 long long numbers[MAX_SIZE];
 
 int read_file(char *file_name) {
-	FILE *fd = fopen(file_name, "r");
+	FILE *fd = fopen(file_name, "rt");
 
     if (fd == NULL) {
-		printf("Error! Can't open %s!\n", file_name);
-		return 1;
-	}
+        printf("Error! Can't open %s!\n", file_name);
+        return 1;
+    }
 
 	size_t n;
 	char sym;
@@ -34,6 +34,10 @@ int read_file(char *file_name) {
 			printf("Error! Amount of numbers is greater then expected!\n");
 			return 2;
 		}
+	}
+
+	if (number != 0) {
+		numbers[ind++] = number;
 	}
 
 	return 0;
@@ -80,7 +84,7 @@ int main(int argc, char * argv[]) {
 
 	int n;
 	int i;
-	for (i = 1; i < argc - 1; ++i) {
+	for (i = 1; i < argc; ++i) {
 		if ((n = read_file(argv[i])) != 0) {
 			exit(n);
 		}
