@@ -1,118 +1,127 @@
-#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <sys/stat.h>
 #include <sys/file.h>
 
-#define MAX_USERS 100
+/*
+после прочтения и после перезаписи ставится sleep на 5 секунд
+пока спит запускаем вторую копию программы
+вторая копия ждет разблокировки и затем также выполняется
+*/
 
-typedef struct user_info {
-    char username[100];
-    char password[100];
+typedef struct user {
+    char username[50];
+    char pass[50];
 };
 
-struct user_info users_list[MAX_USERS];
+struct user users[50];
 
-char * concat(char * s1, char * s2) {
-    char * result = malloc(strlen(s1)+strlen(s2)+1);
-    strcpy(result, s1);
-    strcat(result, s2);
-    return result;
+void write_blocktype(char * file, char * blocktype) {
+    char * lckfile = malloc(strlen(file)+5);
+
+    strcpy(lckfile, file);
+    strcat(lckfile, ".lck");
+
+    FILE * f = fopen(lckfile, "w");
+    fprintf(f, "%ld %s", (long)getpid(), blocktype);
+    fclose(f);
 }
 
-void print_status(char * filename, char * status) {
-    char *filelck = concat(filename, ".lck");
-    FILE * fd = fopen(filelck, "w");
-    fprintf(fd, "%ld %s", (long)getpid(), status);
-    fclose(fd);
-}
-
-void change_password(char *filename,char *username,
-                     char *password) {
-    FILE * fd = fopen(filename, "r+");
-    if (fd == NULL) {
-        printf("Error! File don't exist!\n");
+void change_password(char *file,char *username,	char *pass) {
+    FILE * f = fopen(file, "r+");
+    if (f == NULL) {
+        printf("Can't open file %s!\n", file);
         exit(1);
     }
-    flock(fileno(fd), LOCK_EX);
 
-    print_status(filename, "READ");
-    int new_user = 0;
-    int users_count = 0;
-    while(!feof(fd)) {
-        char tmp_str[100];
-        if(fgets(tmp_str, sizeof(tmp_str), fd)) {
-            char *istr;
-            char *separators = " \n";
-            istr = strtok(tmp_str, separators);
-            strcpy(users_list[users_count].username, istr);
-            if (strcmp(istr, username) == 0) {
-                strcpy(users_list[users_count].password, password);
-                new_user = 1;
-            } else {
-                istr = strtok(NULL, separators);
-                strcpy(users_list[users_count].password, istr);
-            }
-            ++users_count;
+    int sleeptime = 5;
+    size_t len;
+    char * line = NULL;
+    int i = 0;
+    int user_flag = 1;
+    ssize_t n;
+    char * part;
+
+    flock(fileno(f), LOCK_EX);
+    write_blocktype(file, "read");
+    printf("Reading...\n");
+
+    while ((n = getline(&line, &len, f)) != -1) {
+        part = strtok(line, " \n");
+        strcpy(users[i].username, part);
+
+        if (strcmp(part, username) == 0) {
+            strcpy(users[i].pass, pass);
+            user_flag--;
+        } else {
+            part = strtok(NULL, " \n");
+            strcpy(users[i].pass, part);
         }
+
+        i++;
     }
 
-    if (new_user == 0) {
-        strcpy(users_list[users_count].username, username);
-        strcpy(users_list[users_count].password, password);
-        ++users_count;
+    if (user_flag != 0) {
+        strcpy(users[i].username, username);
+        strcpy(users[i].pass, pass);
+        i++;
     }
 
-    print_status(filename, "WRITE");
-    fd = freopen(NULL, "w+", fd);
-    int i;
-    for (i = 0; i < users_count; ++i) {
-        fprintf(fd, "%s %s\n", users_list[i].username, users_list[i].password);
+    fclose(f);
+
+    sleep(sleeptime);
+    write_blocktype(file, "write");
+    printf("Writing...\n");
+
+    f = fopen(file, "w+");
+    if (f == NULL) {
+        printf("Can't open file %s!\n", file);
+
+        exit(1);
     }
 
-    flock(fileno(fd), LOCK_UN);
-    fclose(fd);
+    int j;
+    for (j = 0; j < i; j++) {
+        fprintf(f,"%s %s\n", users[j].username, users[j].pass);
+    }
+
+    sleep(sleeptime);
+    printf("Finished\n");
+    flock(fileno(f), LOCK_UN);
+    fclose(f);
 }
 
-void update_user_info(char *filename,
-                      char *username, char *password) {
-    char *filelck = concat(filename, ".lck");
-    while (1) {
-        if(access(filelck, F_OK) == -1) {
-            break;
-        }
+void add_to_file(char *file, char *username, char *pass) {
+    char * lckfile = malloc(strlen(file)+5);
+    strcpy(lckfile, file);
+    strcat(lckfile, ".lck");
 
-        FILE * fp = fopen(filelck, "r");
-        long long_pid;
-        char operation[10];
-        fscanf(fp, "%ld %s", &long_pid, operation);
-        fclose(fp);
-
-        printf("%ld, %s. Wait for file unlock...\n", long_pid, operation);
+    while (access(lckfile, 0) != -1) {
+        FILE * f = fopen(lckfile, "r");
+        long pid;
+        char operation[5];
+        fscanf(f, "%ld %s", &pid, operation);
+        fclose(f);
+        printf("File blocked. Operation: %s. pid: %ld\n", operation, pid);
         sleep(1);
     }
 
-    FILE * fd = fopen(filelck, "ab+");
-    chmod(filelck, S_IRUSR | S_IWUSR | S_IROTH);
-    fclose(fd);
-
-    change_password(filename, username, password);
-
-    remove(filelck);
+    FILE * f = fopen(lckfile, "w");
+    fclose(f);
+    change_password(file, username, pass);
+    remove(lckfile);
 }
 
 int main(int argc, char *argv[]) {
     if (argc != 4) {
-        printf("Error! Wrong params!\n");
+        printf("Wrong number of arguments\n");
+
         exit(1);
     }
 
-    char * filename = argv[1];
-    char * username = argv[2];
-    char * password = argv[3];
-
-    update_user_info(filename, username, password);
+    add_to_file(argv[1], argv[2], argv[3]);
 
     return 0;
 }
